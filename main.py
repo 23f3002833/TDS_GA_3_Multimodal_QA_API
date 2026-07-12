@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-# 1. Enable CORS (Crucial for the grader)
+# 1. Enable Global CORS (Crucial for the grader worker engine)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,46 +17,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. Define Request Format
+# 2. Match standard API Input Contract schema
 class QAInput(BaseModel):
     image_base64: str
     question: str
 
-# 3. Read the token from Environment Variables
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "YOUR_GITHUB_TOKEN_HERE")
+# 3. Read token from system configurations
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "YOUR_FALLBACK_TOKEN")
 
 @app.post("/answer-image")
 async def answer_image(data: QAInput):
     try:
         base64_str = data.image_base64.strip()
         
-        # Clean data URI prefix if it exists
+        # Clean prefix wrappers safely
         if base64_str.startswith("data:"):
             if "," in base64_str:
+                # FIXED: Extract index element [1] string from array result splits
                 base64_str = base64_str.split(",", 1)[1]
         
-        # Format the data URI standard string for the model payload
+        # Structure valid image reference standard block
         data_url = f"data:image/png;base64,{base64_str}"
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Base64 preparation error: {str(e)}")
+        print(f"[ERROR] Decoding setup crashed: {e}")
+        raise HTTPException(status_code=400, detail="Malformed base64 image data payload assignment.")
 
+    # Strict operational boundary rules for grading normalization
     prompt_instructions = (
-        f"Analyze the attached image and answer this exact question: '{data.question}'. "
+        f"Analyze the attached document/chart image data and answer this question: '{data.question}'. "
         "CRITICAL RULES:\n"
-        "1. Give only the exact direct answer value.\n"
-        "2. If the answer is a number, return ONLY the raw numeric digits/decimals. "
-        "Do NOT include any currency symbols ($), commas, units (kg, m), or explanation.\n"
-        "Example: Output '4089.35', NOT '$4,089.35'."
+        "1. Give only the exact direct answer value string.\n"
+        "2. If the answer is numeric, return ONLY the raw digit formatting value decimals. "
+        "Do NOT include any currency symbols ($), commas, units (kg, months), or words.\n"
+        "Example: format '4089.35', NOT '$4,089.35'."
     )
 
-    # 4. Formulate the raw HTTP request payload for gpt-4o-mini
+    # Prepare standard API context headers
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Content-Type": "application/json"
     }
     
+    # Structure model context request payloads
     payload = {
-        "model": "gpt-4o-mini",
+        "model": "azure-openai/gpt-4o-mini",
         "messages": [
             {
                 "role": "user",
@@ -66,27 +70,31 @@ async def answer_image(data: QAInput):
                 ]
             }
         ],
-        "temperature": 0.1
+        "temperature": 0.0
     }
 
     try:
-        # Standard HTTP client to query the GitHub Models marketplace endpoint
-        conn = http.client.HTTPSConnection("://azure.com")
-        conn.request("POST", "/chat/completions", json.dumps(payload), headers)
-        res = conn.getresponse()
+        # Connect to updated cloud endpoint infrastructure mappings 
+        conn = http.client.HTTPSConnection("models.github.ai")
+        conn.request("POST", "/inference/chat/completions", json.dumps(payload), headers)
+        res = conn.getcall = conn.getresponse()
+        
         response_data = json.loads(res.read().decode("utf-8"))
         conn.close()
         
-        # Extract the string content answer
-        raw_answer = response_data["choices"][0]["message"]["content"]
-        clean_answer = raw_answer.strip().replace('"', '').replace("'", "")
-        
-        print(f"[SUCCESS] Q: {data.question} -> A: {clean_answer}")
-        return {"answer": clean_answer}
+        # Read token structure elements safely
+        if "choices" in response_data:
+            raw_answer = response_data["choices"][0]["message"]["content"]
+            clean_answer = raw_answer.strip().replace('"', '').replace("'", "")
+            print(f"[SUCCESS] Q: {data.question} -> A: {clean_answer}")
+            return {"answer": clean_answer}
+        else:
+            print(f"[CRITICAL] API responded with unexpected mapping schema: {response_data}")
+            raise HTTPException(status_code=502, detail="Upstream inference response extraction mismatch.")
         
     except Exception as e:
-        print(f"[ERROR] Inference Failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Model execution error: {str(e)}")
+        print(f"[CRITICAL ERROR] Target runtime execution crashed: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal proxy server engine error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
