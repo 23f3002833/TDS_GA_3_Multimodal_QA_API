@@ -22,8 +22,8 @@ class QAInput(BaseModel):
     image_base64: str
     question: str
 
-# 3. Read token from system configurations
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "YOUR_FALLBACK_TOKEN")
+# 3. Read token securely from environment variables
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
 @app.post("/answer-image")
 async def answer_image(data: QAInput):
@@ -33,14 +33,14 @@ async def answer_image(data: QAInput):
         # Clean prefix wrappers safely
         if base64_str.startswith("data:"):
             if "," in base64_str:
-                # FIXED: Extract index element [1] string from array result splits
+                # Safely extract everything after the first comma
                 base64_str = base64_str.split(",", 1)[1]
         
         # Structure valid image reference standard block
         data_url = f"data:image/png;base64,{base64_str}"
     except Exception as e:
-        print(f"[ERROR] Decoding setup crashed: {e}")
-        raise HTTPException(status_code=400, detail="Malformed base64 image data payload assignment.")
+        print(f"[ERROR] Decoding setup failed: {e}")
+        raise HTTPException(status_code=400, detail="Malformed base64 image data payload.")
 
     # Strict operational boundary rules for grading normalization
     prompt_instructions = (
@@ -58,9 +58,9 @@ async def answer_image(data: QAInput):
         "Content-Type": "application/json"
     }
     
-    # Structure model context request payloads
+    # Structure model context request payloads using gpt-4o-mini
     payload = {
-        "model": "azure-openai/gpt-4o-mini",
+        "model": "gpt-4o-mini",
         "messages": [
             {
                 "role": "user",
@@ -74,12 +74,14 @@ async def answer_image(data: QAInput):
     }
 
     try:
-        # Connect to updated cloud endpoint infrastructure mappings 
-        conn = http.client.HTTPSConnection("models.github.ai")
-        conn.request("POST", "/inference/chat/completions", json.dumps(payload), headers)
-        res = conn.getcall = conn.getresponse()
+        # FIXED: Routing via universal proxy adapter to allow clean raw HTTP requests
+        conn = http.client.HTTPSConnection("models.inference.ai.azure.com")
+        conn.request("POST", "/chat/completions", json.dumps(payload), headers)
         
-        response_data = json.loads(res.read().decode("utf-8"))
+        # FIXED: Removed the invalid `getcall` assignment typo causing the 500 error
+        res = conn.getresponse()
+        response_body = res.read().decode("utf-8")
+        response_data = json.loads(response_body)
         conn.close()
         
         # Read token structure elements safely
@@ -89,7 +91,7 @@ async def answer_image(data: QAInput):
             print(f"[SUCCESS] Q: {data.question} -> A: {clean_answer}")
             return {"answer": clean_answer}
         else:
-            print(f"[CRITICAL] API responded with unexpected mapping schema: {response_data}")
+            print(f"[CRITICAL] Unexpected response mapping schema: {response_data}")
             raise HTTPException(status_code=502, detail="Upstream inference response extraction mismatch.")
         
     except Exception as e:
